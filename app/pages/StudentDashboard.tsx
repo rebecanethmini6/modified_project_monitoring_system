@@ -6,6 +6,7 @@ import { Button } from '@/frontend/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/frontend/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/frontend/components/ui/tabs';
 import { Badge } from '@/frontend/components/ui/badge';
+import { getAcademicBatch, getCurrentAcademicYear, getCurrentStudyYear, normalizeRegistrationDate } from '@/frontend/lib/academic';
 import { 
   GraduationCap, 
   LogOut, 
@@ -26,19 +27,18 @@ import {
   ChevronRight
 } from 'lucide-react';
 
-const combinationLabels: Record<string, string> = {
-  cs: 'Computer Science',
-  'cs-math': 'Computer Science & Mathematics',
-  is: 'Information Systems',
-  se: 'Software Engineering',
-  ds: 'Data Science',
-};
-
-const academicYearLabels: Record<string, string> = {
-  '1': 'Year 1',
-  '2': 'Year 2',
-  '3': 'Year 3',
-  '4': 'Year 4',
+type StudentProject = {
+  id: string;
+  title: string;
+  project_type?: string;
+  department?: string;
+  supervisorName?: string;
+  status?: string;
+  progress?: number;
+  completed_date?: string;
+  start_date?: string;
+  submitted_date?: string;
+  owner_id?: string;
 };
 
 export function StudentDashboard() {
@@ -49,11 +49,14 @@ export function StudentDashboard() {
     fullName: '',
     indexNumber: '',
     email: '',
-    combination: '',
-    academicYear: '',
+  registrationDate: '',
+  admissionBatch: '',
+  currentAcademicYear: '',
+  currentStudyYear: '',
     contactNumber: '',
   });
-  const [dbProject, setDbProject] = useState<any>(null);
+  const [userId, setUserId] = useState('');
+  const [allProjects, setAllProjects] = useState<StudentProject[]>([]);
   const [projectLoading, setProjectLoading] = useState(true);
 
   useEffect(() => {
@@ -65,6 +68,7 @@ export function StudentDashboard() {
         router.push('/');
         return;
       }
+      setUserId(user.id);
 
       // Fetch profile
       const response = await fetch(`/api/student/profile?userId=${encodeURIComponent(user.id)}&email=${encodeURIComponent(user.email ?? '')}`);
@@ -74,34 +78,29 @@ export function StudentDashboard() {
         setStudentData(payload.student);
       } else {
         const metadata = user.user_metadata ?? {};
+        const registrationDate = normalizeRegistrationDate(metadata.registration_date ?? metadata.academic_year);
         setStudentData({
           fullName: metadata.full_name ?? '',
           indexNumber: metadata.index_number ?? '',
           email: user.email ?? '',
-          combination: metadata.combination_label ?? combinationLabels[metadata.combination] ?? metadata.combination ?? '',
-          academicYear: metadata.academic_year_label ?? academicYearLabels[metadata.academic_year] ?? metadata.academic_year ?? '',
+          registrationDate,
+          admissionBatch: registrationDate ? getAcademicBatch(registrationDate) : '',
+          currentAcademicYear: registrationDate ? getCurrentAcademicYear() : '',
+          currentStudyYear: registrationDate ? getCurrentStudyYear(registrationDate) : '',
           contactNumber: metadata.contact_number ?? '',
         });
       }
 
-      // Load active project from database
+      // Load every project this student is enrolled in (owned individual/group
+      // projects AND group projects where they are listed as a member).
       try {
-        const projResponse = await fetch('/api/projects');
+        const projResponse = await fetch(`/api/projects?enrolledStudentId=${encodeURIComponent(user.id)}`);
         const projPayload = await projResponse.json();
         if (projResponse.ok && projPayload?.projects) {
-          const activeProj = projPayload.projects.find((p: any) => p.owner_id === user.id);
-          if (activeProj) {
-            const detailRes = await fetch(`/api/projects/${activeProj.id}`);
-            const detailPayload = await detailRes.json();
-            if (detailRes.ok && detailPayload?.project) {
-              setDbProject(detailPayload.project);
-            } else {
-              setDbProject(activeProj);
-            }
-          }
+          setAllProjects(projPayload.projects);
         }
       } catch (projErr) {
-        console.error('Failed to load active project:', projErr);
+        console.error('Failed to load projects:', projErr);
       } finally {
         setProjectLoading(false);
       }
@@ -112,35 +111,32 @@ export function StudentDashboard() {
     void loadStudent();
   }, [router]);
 
-  // Mock projects data
-  const completedProjects = [
-    {
-      id: 1,
-      title: 'E-Commerce Web Application',
-      type: 'Individual',
-      department: 'Computer Science',
-      supervisor: 'Dr. Sarah Johnson',
-      completedDate: '2025-12-15',
-    },
-    {
-      id: 2,
-      title: 'Machine Learning Image Classifier',
-      type: 'Group',
-      department: 'Computer Science',
-      supervisor: 'Dr. Michael Chen',
-      completedDate: '2024-11-20',
-    },
-  ];
+  // Real completed projects for this student
+  const completedProjects = allProjects
+    .filter((p) => p.status === 'completed')
+    .map((p) => ({
+      id: p.id,
+      title: p.title,
+      type: p.project_type === 'group' ? 'Group' : 'Individual',
+      department: p.department,
+      supervisor: p.supervisorName || 'Not Assigned',
+      completedDate: p.completed_date || '—',
+    }));
 
-  const currentProject = dbProject ? {
-    id: dbProject.id,
-    title: dbProject.title,
-    type: dbProject.project_type === 'group' ? 'Group' : 'Individual',
-    department: dbProject.department,
-    supervisor: dbProject.supervisor?.fullName || 'Not Assigned',
-    status: dbProject.status === 'pending' ? 'Pending Approval' : 'In Progress',
-    progress: dbProject.progress || 0,
-  } : null;
+  // All active (non-completed) enrolled projects.
+  const currentProjects = allProjects
+    .filter((p) => p.status !== 'completed')
+    .map((p) => ({
+      id: p.id,
+      title: p.title,
+      type: p.project_type === 'group' ? 'Group' : 'Individual',
+      department: p.department,
+      supervisor: p.supervisorName || 'Not Assigned',
+      status: p.status === 'pending' ? 'Pending Approval' : 'In Progress',
+      progress: p.progress || 0,
+      startDate: p.start_date || p.submitted_date || '—',
+      isOwner: p.owner_id === userId,
+    }));
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
@@ -168,12 +164,6 @@ export function StudentDashboard() {
         </div>
 
         <div className="flex items-center gap-4">
-          {/* Mock notification icon */}
-          <Button variant="ghost" size="icon" className="relative text-gray-500 hover:bg-slate-50">
-            <Bell className="w-5 h-5" />
-            <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full"></span>
-          </Button>
-
           <Button 
             variant="outline" 
             onClick={() => router.push('/')}
@@ -260,8 +250,8 @@ export function StudentDashboard() {
             </div>
             <div className="flex gap-4 relative z-10 flex-wrap">
               <div className="bg-white/10 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/10 text-center min-w-[100px]">
-                <span className="block text-[10px] text-blue-200 font-bold uppercase tracking-wider">Class</span>
-                <span className="text-sm font-bold">{studentData.academicYear || 'Year -'}</span>
+                <span className="block text-[10px] text-blue-200 font-bold uppercase tracking-wider">Study Year</span>
+                <span className="text-sm font-bold">{studentData.currentStudyYear || 'Not set'}</span>
               </div>
               <div className="bg-white/10 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/10 text-center min-w-[100px]">
                 <span className="block text-[10px] text-blue-200 font-bold uppercase tracking-wider">Index No</span>
@@ -287,31 +277,49 @@ export function StudentDashboard() {
                     <p className="text-sm text-gray-500 font-medium">Loading workspace profile...</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
-                      <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">Full Name</p>
-                      <p className="font-bold text-gray-900 mt-1">{studentData.fullName}</p>
-                    </div>
-                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
-                      <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">Index Number</p>
-                      <p className="font-bold text-gray-900 mt-1">{studentData.indexNumber}</p>
-                    </div>
-                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
-                      <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">Email Address</p>
-                      <p className="font-bold text-gray-900 mt-1">{studentData.email}</p>
-                    </div>
-                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
-                      <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">Combination</p>
-                      <p className="font-bold text-gray-900 mt-1">{studentData.combination}</p>
-                    </div>
-                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
-                      <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">Academic Year</p>
-                      <p className="font-bold text-gray-900 mt-1">{studentData.academicYear}</p>
-                    </div>
-                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
-                      <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">Contact Number</p>
-                      <p className="font-bold text-gray-900 mt-1">{studentData.contactNumber}</p>
-                    </div>
+                  <div className="overflow-hidden rounded-2xl border border-slate-100">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100">
+                          <th className="text-left px-5 py-3 text-xs font-bold text-gray-400 uppercase tracking-wider w-1/3">Field</th>
+                          <th className="text-left px-5 py-3 text-xs font-bold text-gray-400 uppercase tracking-wider">Details</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        <tr className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-5 py-4 text-gray-500 font-medium">Full Name</td>
+                          <td className="px-5 py-4 font-bold text-gray-900">{studentData.fullName}</td>
+                        </tr>
+                        <tr className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-5 py-4 text-gray-500 font-medium">Index Number</td>
+                          <td className="px-5 py-4 font-bold text-gray-900">{studentData.indexNumber}</td>
+                        </tr>
+                        <tr className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-5 py-4 text-gray-500 font-medium">Email Address</td>
+                          <td className="px-5 py-4 font-bold text-gray-900">{studentData.email}</td>
+                        </tr>
+                        <tr className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-5 py-4 text-gray-500 font-medium">Registration Date</td>
+                          <td className="px-5 py-4 font-bold text-gray-900">{studentData.registrationDate}</td>
+                        </tr>
+                        <tr className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-5 py-4 text-gray-500 font-medium">Admission Batch</td>
+                          <td className="px-5 py-4 font-bold text-gray-900">{studentData.admissionBatch}</td>
+                        </tr>
+                        <tr className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-5 py-4 text-gray-500 font-medium">Current Academic Year</td>
+                          <td className="px-5 py-4 font-bold text-gray-900">{studentData.currentAcademicYear}</td>
+                        </tr>
+                        <tr className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-5 py-4 text-gray-500 font-medium">Current Study Year</td>
+                          <td className="px-5 py-4 font-bold text-gray-900">{studentData.currentStudyYear}</td>
+                        </tr>
+                        <tr className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-5 py-4 text-gray-500 font-medium">Contact Number</td>
+                          <td className="px-5 py-4 font-bold text-gray-900">{studentData.contactNumber}</td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </CardContent>
@@ -377,99 +385,83 @@ export function StudentDashboard() {
                   <p className="text-sm text-gray-500 font-medium">Checking active projects...</p>
                 </CardContent>
               </Card>
-            ) : currentProject ? (
+            ) : currentProjects.length > 0 ? (
               <div className="space-y-6">
-                {/* Stats quick overview */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <Card className="border-slate-100 shadow-md shadow-slate-100/30 rounded-2xl">
-                    <CardContent className="p-5 flex items-center gap-4">
-                      <div className="bg-blue-50 text-[#1E3A8A] p-3 rounded-2xl">
-                        <TrendingUp className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <span className="block text-xs text-gray-400 font-bold uppercase tracking-wider">Overall Progress</span>
-                        <span className="text-xl font-extrabold text-gray-950 mt-0.5 block">{currentProject.progress}%</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="border-slate-100 shadow-md shadow-slate-100/30 rounded-2xl">
-                    <CardContent className="p-5 flex items-center gap-4">
-                      <div className="bg-emerald-50 text-[#10B981] p-3 rounded-2xl">
-                        <MessageSquare className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <span className="block text-xs text-gray-400 font-bold uppercase tracking-wider">Feedbacks</span>
-                        <span className="text-xl font-extrabold text-gray-950 mt-0.5 block">2 Received</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="border-slate-100 shadow-md shadow-slate-100/30 rounded-2xl">
-                    <CardContent className="p-5 flex items-center gap-4">
-                      <div className="bg-indigo-50 text-[#4F46E5] p-3 rounded-2xl">
-                        <CalendarRange className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <span className="block text-xs text-gray-400 font-bold uppercase tracking-wider">Start Date</span>
-                        <span className="text-xl font-extrabold text-gray-950 mt-0.5 block">2026-01-15</span>
-                      </div>
-                    </CardContent>
-                  </Card>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-950">My Enrolled Projects</h2>
+                    <p className="text-xs text-gray-500 mt-0.5">Projects you own or are a group member of</p>
+                  </div>
+                  <Badge className="bg-[#1E3A8A] text-white hover:bg-[#1E3A8A] px-3 py-1 rounded-full text-xs">
+                    {currentProjects.length} Active
+                  </Badge>
                 </div>
 
-                <Card className="border-slate-100 shadow-xl shadow-slate-100/50 rounded-2xl">
-                  <CardHeader className="border-b border-slate-50 pb-5">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div>
-                        <Badge className="bg-blue-50 text-[#1E3A8A] hover:bg-blue-50 border border-blue-100 font-semibold rounded-full text-[10px] uppercase">
-                          {currentProject.status}
-                        </Badge>
-                        <CardTitle className="text-xl font-bold text-gray-900 mt-2">{currentProject.title}</CardTitle>
-                        <CardDescription className="text-gray-500 mt-0.5">{currentProject.department}</CardDescription>
-                      </div>
-                      <Badge className="bg-indigo-50 text-[#4F46E5] hover:bg-indigo-50 border border-indigo-100 font-semibold rounded-full text-xs py-1 px-3 self-start sm:self-auto">
-                        {currentProject.type} Project
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-6 space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
-                        <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">Project Supervisor</span>
-                        <span className="block text-base font-bold text-gray-800 mt-1">{currentProject.supervisor}</span>
-                      </div>
-                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
-                        <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">Assigned Department</span>
-                        <span className="block text-base font-bold text-gray-800 mt-1">{currentProject.department}</span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="font-semibold text-gray-700">Project Milestone Progress</span>
-                        <span className="font-extrabold text-[#1E3A8A]">{currentProject.progress}%</span>
-                      </div>
-                      <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-[#1E3A8A] to-[#4F46E5] transition-all duration-500 rounded-full"
-                          style={{ width: `${currentProject.progress}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="pt-4 border-t border-slate-100">
-                      <Button
-                        className="w-full h-11 bg-[#1E3A8A] hover:bg-[#152a63] text-white font-semibold rounded-xl flex items-center justify-center gap-2"
-                        onClick={() => router.push(`/student/project/${currentProject.id}`)}
-                      >
-                        <FolderOpen className="w-4 h-4" />
-                        View Milestones & Submit Files
-                        <ArrowRight className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
+                <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-xl shadow-slate-100/50">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100">
+                        <th className="text-left px-5 py-3 text-xs font-bold text-gray-400 uppercase tracking-wider">Project Title</th>
+                        <th className="text-left px-5 py-3 text-xs font-bold text-gray-400 uppercase tracking-wider">Type</th>
+                        <th className="text-left px-5 py-3 text-xs font-bold text-gray-400 uppercase tracking-wider">Status</th>
+                        <th className="text-left px-5 py-3 text-xs font-bold text-gray-400 uppercase tracking-wider">Role</th>
+                        <th className="text-left px-5 py-3 text-xs font-bold text-gray-400 uppercase tracking-wider">Supervisor</th>
+                        <th className="text-left px-5 py-3 text-xs font-bold text-gray-400 uppercase tracking-wider">Start Date</th>
+                        <th className="text-left px-5 py-3 text-xs font-bold text-gray-400 uppercase tracking-wider w-36">Progress</th>
+                        <th className="px-5 py-3"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {currentProjects.map((currentProject) => (
+                        <tr key={currentProject.id} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-5 py-4">
+                            <p className="font-bold text-gray-900 leading-tight">{currentProject.title}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">{currentProject.department}</p>
+                          </td>
+                          <td className="px-5 py-4">
+                            <Badge className="bg-indigo-50 text-[#4F46E5] hover:bg-indigo-50 border border-indigo-100 font-semibold rounded-full text-[10px]">
+                              {currentProject.type}
+                            </Badge>
+                          </td>
+                          <td className="px-5 py-4">
+                            <Badge className="bg-blue-50 text-[#1E3A8A] hover:bg-blue-50 border border-blue-100 font-semibold rounded-full text-[10px] uppercase">
+                              {currentProject.status}
+                            </Badge>
+                          </td>
+                          <td className="px-5 py-4">
+                            <Badge className={`font-semibold rounded-full text-[10px] border ${currentProject.isOwner ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
+                              {currentProject.isOwner ? 'Owner' : 'Group Member'}
+                            </Badge>
+                          </td>
+                          <td className="px-5 py-4 text-gray-700 font-medium">{currentProject.supervisor}</td>
+                          <td className="px-5 py-4 text-gray-700 font-medium whitespace-nowrap">{currentProject.startDate}</td>
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-gradient-to-r from-[#1E3A8A] to-[#4F46E5] transition-all duration-500 rounded-full"
+                                  style={{ width: `${currentProject.progress}%` }}
+                                />
+                              </div>
+                              <span className="text-xs font-extrabold text-[#1E3A8A] w-8 text-right">{currentProject.progress}%</span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4">
+                            <Button
+                              size="sm"
+                              className="bg-[#1E3A8A] hover:bg-[#152a63] text-white font-semibold rounded-xl flex items-center gap-1.5 whitespace-nowrap"
+                              onClick={() => router.push(`/student/project/${currentProject.id}`)}
+                            >
+                              <FolderOpen className="w-3.5 h-3.5" />
+                              View
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ) : (
               <Card className="border-slate-100 shadow-xl shadow-slate-100/50 rounded-2xl">

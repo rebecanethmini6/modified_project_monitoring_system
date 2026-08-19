@@ -21,7 +21,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabaseClient: SupabaseClient =
-  globalThis.__supabaseClient ?? createClient(supabaseUrl, supabaseAnonKey);
+  globalThis.__supabaseClient ?? createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
 
 if (typeof window !== 'undefined' && !globalThis.__supabaseClient) {
   globalThis.__supabaseClient = supabaseClient;

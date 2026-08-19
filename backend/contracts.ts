@@ -2,8 +2,7 @@ export type StudentRegistrationPayload = {
   fullName: string;
   indexNumber: string;
   email: string;
-  combination: string;
-  academicYear: string;
+  registrationDate: string;
   contactNumber: string;
   password: string;
 };

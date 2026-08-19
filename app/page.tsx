@@ -1,5 +1,5 @@
-import { Login } from "@/frontend/pages/Login";
+import { Home } from '@/frontend/pages/Home';
 
-export default function Home() {
-  return <Login />;
+export default function Page() {
+  return <Home />;
 }

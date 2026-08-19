@@ -5,8 +5,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { ArrowLeft, GraduationCap, User, Mail, BookOpen, Calendar, Phone, Lock } from 'lucide-react';
+import { ArrowLeft, GraduationCap, User, Mail, Calendar, Phone, Lock } from 'lucide-react';
 
 export function StudentRegister() {
   const router = useRouter();
@@ -16,8 +15,7 @@ export function StudentRegister() {
     fullName: '',
     indexNumber: '',
     email: '',
-    combination: '',
-    academicYear: '',
+    registrationDate: '',
     contactNumber: '',
     password: '',
   });
@@ -54,9 +52,11 @@ export function StudentRegister() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] p-4 py-8 flex flex-col items-center justify-center">
-      <div className="w-full max-w-2xl space-y-6">
-        <div className="flex items-center justify-between">
+    <div className="relative flex h-screen flex-col items-center justify-center overflow-hidden p-4">
+      <div aria-hidden="true" className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/login.jpg')" }} />
+      <div aria-hidden="true" className="absolute inset-0 bg-[#062b74]/35 backdrop-blur-[1px]" />
+      <div className="relative z-10 flex h-full w-full max-w-2xl flex-col space-y-4 py-2">
+        <div className="flex shrink-0 items-center justify-between rounded-xl border border-white/70 bg-white/95 px-4 py-3 shadow-lg shadow-blue-950/15 backdrop-blur-sm">
           <Button 
             variant="ghost" 
             onClick={() => router.push('/')} 
@@ -72,14 +72,14 @@ export function StudentRegister() {
           </div>
         </div>
 
-        <Card className="border-slate-100 shadow-xl shadow-slate-100/50 rounded-2xl">
+        <Card className="min-h-0 flex flex-1 flex-col border-white/70 bg-white/95 shadow-xl shadow-blue-950/25 rounded-2xl backdrop-blur-sm">
           <CardHeader className="border-b border-slate-50 pb-6 text-center md:text-left">
             <CardTitle className="text-2xl font-bold text-gray-900">Student Registration</CardTitle>
             <CardDescription className="text-gray-500">
               Create a new student workspace account to track your academic projects
             </CardDescription>
           </CardHeader>
-          <CardContent className="pt-6">
+          <CardContent className="min-h-0 flex-1 overflow-y-auto pt-6">
             <form onSubmit={handleSubmit} className="space-y-6">
               
               {/* Section 1: Personal Info */}
@@ -136,9 +136,9 @@ export function StudentRegister() {
                 </div>
               </div>
 
-              {/* Section 2: Academic Classification */}
+              {/* Section 2: Registration Information */}
               <div className="space-y-4 pt-4 border-t border-slate-100">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Academic Classification</h3>
+                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Registration Information</h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -157,47 +157,12 @@ export function StudentRegister() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="academicYear" className="text-sm font-semibold text-gray-700">Academic Year</Label>
-                    <Select
-                      value={formData.academicYear}
-                      onValueChange={(value) => updateField('academicYear', value)}
-                    >
-                      <SelectTrigger className="h-11 border-slate-200 focus:ring-[#1E3A8A] rounded-xl text-gray-950">
-                        <div className="flex items-center gap-2">
-                          <Calendar className="w-4 h-4 text-gray-400" />
-                          <SelectValue placeholder="Select academic year" />
-                        </div>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">Year 1</SelectItem>
-                        <SelectItem value="2">Year 2</SelectItem>
-                        <SelectItem value="3">Year 3</SelectItem>
-                        <SelectItem value="4">Year 4</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="registrationDate" className="text-sm font-semibold text-gray-700">Registration Date</Label>
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Input id="registrationDate" type="date" min="2023-01-01" max="2026-12-31" value={formData.registrationDate} onChange={(e) => updateField('registrationDate', e.target.value)} className="pl-10 h-11 border-slate-200 focus-visible:ring-[#1E3A8A] rounded-xl text-gray-950" required />
+                    </div>
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="combination" className="text-sm font-semibold text-gray-700">Degree Combination</Label>
-                  <Select
-                    value={formData.combination}
-                    onValueChange={(value) => updateField('combination', value)}
-                  >
-                    <SelectTrigger className="h-11 border-slate-200 focus:ring-[#1E3A8A] rounded-xl text-gray-950">
-                      <div className="flex items-center gap-2">
-                        <BookOpen className="w-4 h-4 text-gray-400" />
-                        <SelectValue placeholder="Select degree combination" />
-                      </div>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cs">Computer Science (CS)</SelectItem>
-                      <SelectItem value="cs-math">Computer Science & Mathematics (CS-Math)</SelectItem>
-                      <SelectItem value="is">Information Systems (IS)</SelectItem>
-                      <SelectItem value="se">Software Engineering (SE)</SelectItem>
-                      <SelectItem value="ds">Data Science (DS)</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
               </div>
 

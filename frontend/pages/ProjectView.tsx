@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import supabaseClient from '../lib/supabaseClient';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -10,7 +11,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Badge } from '../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { ArrowLeft, Plus, Upload, FileText, Calendar, Star, Award, Download, Eye as EyeIcon, Check, AlertCircle, BookOpen, User, Users, FolderKanban } from 'lucide-react';
+import { formatRatingLabel, hasNumericRating, RATING_OPTIONS, ratingBadgeClass } from '../lib/ratings';
+import { ArrowLeft, Plus, Upload, FileText, Calendar, Star, Award, Download, Eye as EyeIcon, Check, AlertCircle, BookOpen, User, Users, FolderKanban, XCircle } from 'lucide-react';
 
 export function ProjectView() {
   const router = useRouter();
@@ -22,48 +24,77 @@ export function ProjectView() {
   const [showDocumentDialog, setShowDocumentDialog] = useState(false);
   const [showRatingDialog, setShowRatingDialog] = useState(false);
   const [showOverallRatingDialog, setShowOverallRatingDialog] = useState(false);
+  const [showStudentRatingDialog, setShowStudentRatingDialog] = useState(false);
+  const [showCloseDialog, setShowCloseDialog] = useState(false);
   const [selectedProgressId, setSelectedProgressId] = useState<number | null>(null);
-  const [overallRating, setOverallRating] = useState('Good');
+  const [overallRating, setOverallRating] = useState('5');
+  const [milestoneComment, setMilestoneComment] = useState('');
+  const [studentRating, setStudentRating] = useState('5');
+  const [selectedStudentRating, setSelectedStudentRating] = useState<any>(null);
+  const [currentUserId, setCurrentUserId] = useState<string>('');
 
   const [projectData, setProjectData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [progressEntries, setProgressEntries] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    const fetchProject = async () => {
-      try {
-        const res = await fetch(`/api/projects/${projectId}`);
-        const payload = await res.json();
-        if (res.ok && payload?.project) {
-          // Parse group members from description metadata
-          let members: string[] = [];
-          let cleanDescription = payload.project.description;
-          const parts = payload.project.description.split("\n\n===METADATA===\n");
-          if (parts.length > 1) {
-            cleanDescription = parts[0];
-            try {
-              const meta = JSON.parse(parts[1]);
-              members = meta.groupMembers?.map((m: any) => `${m.indexNumber} (${m.email})`) || [];
-            } catch (e) {
-              console.error("Failed to parse metadata", e);
-            }
-          }
-          setProjectData({
-            ...payload.project,
-            description: cleanDescription,
-            members,
-            supervisorName: payload.project.supervisor?.fullName || 'Not Assigned',
-          });
+  const fetchProject = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}`);
+      const payload = await res.json();
+      if (res.ok && payload?.project) {
+        const proj = payload.project;
+        // Description and group members are already parsed server-side.
+        const members: string[] = (proj.groupMembers ?? []).map(
+          (m: any) => `${m.indexNumber}${m.email ? ` (${m.email})` : ''}`,
+        );
+        setProjectData({
+          ...proj,
+          members,
+          supervisorName: proj.supervisor?.fullName || proj.supervisorName || 'Not Assigned',
+        });
+        if (hasNumericRating(proj.overallRating)) {
+          setOverallRating(String(proj.overallRating));
         }
-      } catch (err) {
-        console.error("Error loading project:", err);
-      } finally {
-        setLoading(false);
+        setProgressEntries(
+          (proj.progressEntries ?? []).map((e: any) => ({
+            id: e.id,
+            activityNumber: e.activity_number,
+            title: e.title,
+            description: e.description ?? '',
+            startDate: e.start_date ?? '',
+            endDate: e.end_date ?? '',
+            nextSteps: e.next_steps ?? '',
+            rating: e.rating ?? '',
+            feedback: e.feedback ?? '',
+          })),
+        );
+        setDocuments(
+          (proj.documents ?? []).map((d: any) => ({
+            id: d.id,
+            name: d.file_name,
+            description: d.description ?? '',
+            uploadDate: d.upload_date ?? '',
+            feedback: d.feedback ?? '',
+            url: d.url ?? '',
+          })),
+        );
       }
-    };
-    if (projectId) {
-      void fetchProject();
+    } catch (err) {
+      console.error('Error loading project:', err);
+    } finally {
+      setLoading(false);
     }
   }, [projectId]);
+
+  useEffect(() => {
+    if (projectId) void fetchProject();
+    // Capture the logged-in user's ID for owner checks
+    supabaseClient.auth.getUser().then(({ data }) => {
+      if (data.user) setCurrentUserId(data.user.id);
+    });
+  }, [projectId, fetchProject]);
 
   const project = projectData ? {
     id: projectData.id,
@@ -83,47 +114,34 @@ export function ProjectView() {
     members: [] as string[],
   };
 
-  const [progressEntries, setProgressEntries] = useState([
-    {
-      id: 1,
-      activityNumber: 1,
-      title: 'Requirements Gathering',
-      description: 'Collected and documented all system requirements',
-      startDate: '2026-01-15',
-      endDate: '2026-01-30',
-      nextSteps: 'Begin database design',
-      rating: 'Excellent',
-      feedback: 'Great work on comprehensive requirements documentation.',
-    },
-    {
-      id: 2,
-      activityNumber: 2,
-      title: 'Database Design',
-      description: 'Designed relational schema and ER diagrams',
-      startDate: '2026-02-01',
-      endDate: '2026-02-15',
-      nextSteps: 'Implement backend API',
-      rating: 'Good',
-      feedback: 'Consider normalization for better data integrity.',
-    },
-  ]);
+  // Is the current user the project owner?
+  const isProjectOwner = !!currentUserId && !!projectData?.owner_id && projectData.owner_id === currentUserId;
+  const isProjectCompleted = projectData?.status === 'completed';
 
-  const [documents, setDocuments] = useState([
-    {
-      id: 1,
-      name: 'Project Proposal.pdf',
-      description: 'Initial project proposal document',
-      uploadDate: '2026-01-10',
-      feedback: 'Approved. Proceed with implementation.',
-    },
-    {
-      id: 2,
-      name: 'Requirements Document.docx',
-      description: 'Complete system requirements specification',
-      uploadDate: '2026-01-30',
-      feedback: 'Well documented. Add more use case diagrams.',
-    },
-  ]);
+  const handleCloseProject = async () => {
+    setSaving(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'completed',
+          progress: 100,
+          completed_date: today,
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload?.error ?? 'Failed to close project.');
+      setShowCloseDialog(false);
+      // Refresh project data to reflect completed state
+      await fetchProject();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to close project.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const [newProgress, setNewProgress] = useState({
     title: '',
@@ -138,52 +156,197 @@ export function ProjectView() {
     file: null as File | null,
   });
 
-  const handleAddProgress = () => {
-    setProgressEntries([
-      ...progressEntries,
-      {
-        id: progressEntries.length + 1,
-        activityNumber: progressEntries.length + 1,
-        ...newProgress,
-        rating: '',
-        feedback: '',
-      },
-    ]);
-    setNewProgress({ title: '', description: '', startDate: '', endDate: '', nextSteps: '' });
-    setShowProgressDialog(false);
+  /** Safely parse a fetch Response as JSON. If the server returns an HTML
+   *  error page (Next.js 500/404), this converts it into a readable Error
+   *  instead of throwing the cryptic "Unexpected token '<'" message. */
+  const safeJson = async (res: Response): Promise<any> => {
+    const contentType = res.headers.get('content-type') ?? '';
+    if (!contentType.includes('application/json')) {
+      throw new Error(`Server error (${res.status}): the API returned an unexpected response. Check the server console for details.`);
+    }
+    return res.json();
   };
 
-  const handleSubmitDocument = () => {
-    if (newDocument.file) {
-      setDocuments([
-        ...documents,
-        {
-          id: documents.length + 1,
-          name: newDocument.file.name,
-          description: newDocument.description,
-          uploadDate: new Date().toISOString().split('T')[0],
-          feedback: '',
-        },
-      ]);
-      setNewDocument({ description: '', file: null });
-      setShowDocumentDialog(false);
+  const handleAddProgress = async () => {
+    if (!newProgress.title.trim()) {
+      alert('Please enter a milestone title.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/progress`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newProgress),
+      });
+      const payload = await safeJson(res);
+      if (!res.ok) throw new Error(payload?.error ?? 'Failed to add milestone.');
+      setNewProgress({ title: '', description: '', startDate: '', endDate: '', nextSteps: '' });
+      setShowProgressDialog(false);
+      await fetchProject();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to add milestone.');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleRateProgress = (progressId: number, rating: string) => {
-    setProgressEntries(
-      progressEntries.map((entry) =>
-        entry.id === progressId ? { ...entry, rating } : entry
-      )
-    );
-    setShowRatingDialog(false);
-    setSelectedProgressId(null);
+  const handleSubmitDocument = async () => {
+    if (!newDocument.file) {
+      alert('Please choose a file.');
+      return;
+    }
+    setSaving(true);
+    try {
+      // Determine the uploading student (the project owner / current user).
+      const { data: authData } = await supabaseClient.auth.getUser();
+      const uploadedBy = projectData?.owner_id ?? authData?.user?.id;
+
+      const uploadForm = new FormData();
+      uploadForm.append('file', newDocument.file);
+      if (uploadedBy) uploadForm.append('ownerId', uploadedBy);
+      const uploadRes = await fetch('/api/upload', { method: 'POST', body: uploadForm });
+      const uploadPayload = await safeJson(uploadRes);
+      if (!uploadRes.ok) throw new Error(uploadPayload?.error ?? 'File upload failed.');
+
+      const docRes = await fetch(`/api/projects/${projectId}/documents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadedBy,
+          fileName: uploadPayload.filename,
+          description: newDocument.description,
+          storagePath: uploadPayload.path,
+        }),
+      });
+      const docPayload = await safeJson(docRes);
+      if (!docRes.ok) throw new Error(docPayload?.error ?? 'Failed to save document.');
+
+      setNewDocument({ description: '', file: null });
+      setShowDocumentDialog(false);
+      await fetchProject();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to submit document.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleRateOverallProject = () => {
-    alert(`Overall project rated as: ${overallRating}`);
-    setShowOverallRatingDialog(false);
+  const handleRateProgress = async (progressId: number) => {
+    const feedback = milestoneComment.trim();
+    if (!feedback) return;
+    setSaving(true);
+    try {
+      const { data: authData } = await supabaseClient.auth.getUser();
+      const res = await fetch(`/api/progress/${progressId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          feedback: feedback || undefined,
+          ratedBy: authData?.user?.id,
+        }),
+      });
+      const payload = await safeJson(res);
+      if (!res.ok) throw new Error(payload?.error ?? 'Grading failed.');
+      setShowRatingDialog(false);
+      setSelectedProgressId(null);
+      setMilestoneComment('');
+      await fetchProject();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Grading failed.');
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const handleRateOverallProject = async () => {
+    const rating = parseInt(overallRating, 10);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 10) return;
+    setSaving(true);
+    try {
+      const { data: authData } = await supabaseClient.auth.getUser();
+      const res = await fetch(`/api/projects/${projectId}/rating`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating, ratedBy: authData?.user?.id }),
+      });
+      const payload = await safeJson(res);
+      if (!res.ok) throw new Error(payload?.error ?? 'Rating failed.');
+      setShowOverallRatingDialog(false);
+      alert(`Overall project rated: ${formatRatingLabel(rating)}`);
+      await fetchProject();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Rating failed.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRateStudent = async () => {
+    if (!selectedStudentRating) return;
+
+    const rating = parseInt(studentRating, 10);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 10) return;
+
+    setSaving(true);
+    try {
+      const { data: authData } = await supabaseClient.auth.getUser();
+      const ratedBy = authData?.user?.id;
+      if (!ratedBy) {
+        throw new Error('Please sign in before rating students.');
+      }
+
+      const res = await fetch(`/api/projects/${projectId}/student-ratings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentKey: selectedStudentRating.key,
+          rating,
+          ratedBy,
+        }),
+      });
+
+      const payload = await safeJson(res);
+      if (!res.ok) throw new Error(payload?.error ?? 'Student rating failed.');
+
+      setShowStudentRatingDialog(false);
+      setSelectedStudentRating(null);
+      setStudentRating('5');
+      await fetchProject();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Student rating failed.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const projectStudents = projectData
+    ? [
+        ...(projectData.owner_id || projectData.ownerName || projectData.ownerIndex || projectData.ownerEmail
+          ? [{
+              key: `owner:${projectData.owner_id ?? projectData.ownerIndex ?? projectData.ownerEmail ?? 'unknown'}`,
+              name: projectData.ownerName ?? null,
+              indexNumber: projectData.ownerIndex ?? null,
+              email: projectData.ownerEmail ?? null,
+              role: 'owner' as const,
+            }]
+          : []),
+        ...((projectData.groupMembers ?? []).map((member: any) => {
+          const indexNumber = (member.indexNumber ?? '').trim();
+          const email = (member.email ?? '').trim();
+          return {
+            key: `member:${indexNumber.toLowerCase()}:${email.toLowerCase()}`,
+            name: null,
+            indexNumber: indexNumber || null,
+            email: email || null,
+            role: 'member' as const,
+          };
+        })),
+      ]
+    : [];
+
+  const getStudentRating = (studentKey: string) =>
+    (projectData?.studentRatings ?? []).find((rating: any) => rating.student_key === studentKey);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
@@ -225,8 +388,12 @@ export function ProjectView() {
                   {project.department} Affiliation • Academic Year 2026
                 </CardDescription>
               </div>
-              <Badge className="bg-emerald-50 text-[#10B981] hover:bg-emerald-50 border border-emerald-100 font-semibold rounded-full text-xs py-1 px-3.5 self-start md:self-auto uppercase">
-                Active Project
+              <Badge className={`font-semibold rounded-full text-xs py-1 px-3.5 self-start md:self-auto uppercase border ${
+                isProjectCompleted
+                  ? 'bg-slate-100 text-slate-600 border-slate-200'
+                  : 'bg-emerald-50 text-[#10B981] border-emerald-100'
+              }`}>
+                {isProjectCompleted ? 'Completed' : 'Active Project'}
               </Badge>
             </div>
           </CardHeader>
@@ -263,6 +430,27 @@ export function ProjectView() {
               </div>
             </div>
 
+            {/* Close Project – only shown to the project owner on an active project */}
+            {!isLecturerView && isProjectOwner && !isProjectCompleted && (
+              <div className="border border-rose-100 bg-rose-50/40 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-bold text-rose-800">Close this project</p>
+                  <p className="text-xs text-rose-600">
+                    Mark this project as completed. This cannot be undone.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowCloseDialog(true)}
+                  className="border-rose-200 text-rose-700 hover:bg-rose-50 hover:border-rose-300 font-semibold rounded-xl h-10 px-5 flex-shrink-0"
+                >
+                  <XCircle className="w-4 h-4 mr-2" />
+                  Close Project
+                </Button>
+              </div>
+            )}
+
             {project.type === 'Group' && (
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
                 <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-2 flex items-center gap-1.5">
@@ -287,8 +475,8 @@ export function ProjectView() {
                     </div>
                     <div>
                       <span className="block text-[10px] text-gray-400 font-bold uppercase tracking-wider">Overall Project Grade</span>
-                      <Badge className="bg-amber-50 text-amber-700 border border-amber-100 font-bold rounded-lg text-sm mt-1 px-3 py-0.5">
-                        {overallRating} Rating
+                      <Badge className={`${ratingBadgeClass(overallRating)} rounded-lg text-sm mt-1 px-3 py-0.5`}>
+                        {hasNumericRating(overallRating) ? formatRatingLabel(overallRating) : 'Not rated yet'}
                       </Badge>
                     </div>
                   </div>
@@ -307,24 +495,85 @@ export function ProjectView() {
                       </DialogHeader>
                       <div className="space-y-4 pt-4">
                         <div className="space-y-2">
-                          <Label className="text-sm font-semibold text-gray-700">Project Rating</Label>
+                          <Label className="text-sm font-semibold text-gray-700">Project Rating (1-10)</Label>
                           <Select value={overallRating} onValueChange={setOverallRating}>
                             <SelectTrigger className="h-11 border-slate-200 focus:ring-[#1E3A8A] rounded-xl text-gray-955">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="Excellent">Excellent</SelectItem>
-                              <SelectItem value="Good">Good</SelectItem>
-                              <SelectItem value="Bad">Bad</SelectItem>
+                              {RATING_OPTIONS.map((score) => (
+                                <SelectItem key={score} value={String(score)}>{score}/10</SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </div>
-                        <Button onClick={handleRateOverallProject} className="w-full h-11 bg-[#1E3A8A] hover:bg-[#152a63] text-white font-semibold rounded-xl">
-                          Submit Project Rating
+                        <Button onClick={handleRateOverallProject} disabled={saving} className="w-full h-11 bg-[#1E3A8A] hover:bg-[#152a63] text-white font-semibold rounded-xl">
+                          {saving ? 'Saving...' : 'Submit Project Rating'}
                         </Button>
                       </div>
                     </DialogContent>
                   </Dialog>
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50/70 p-4 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Student ratings</p>
+                      <p className="text-sm font-semibold text-gray-800">Rate each student on a 1 to 10 scale</p>
+                    </div>
+                    <Badge className="bg-white text-gray-600 border border-slate-200 rounded-full text-[10px] font-semibold">
+                      {projectStudents.length} student{projectStudents.length === 1 ? '' : 's'}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {projectStudents.map((student) => {
+                      const existingRating = getStudentRating(student.key);
+                      const displayName = student.name ?? student.indexNumber ?? student.email ?? 'Student';
+
+                      return (
+                        <div key={student.key} className="rounded-xl border border-slate-100 bg-white px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-semibold text-gray-900 truncate">{displayName}</span>
+                              <Badge className="bg-slate-50 text-gray-500 hover:bg-slate-50 border border-slate-100 font-semibold rounded-full text-[10px] uppercase">
+                                {student.role}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-gray-500 truncate">
+                              {student.indexNumber ?? 'No index'}{student.email ? ` (${student.email})` : ''}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2 sm:flex-shrink-0">
+                            {existingRating?.rating ? (
+                              <Badge className={ratingBadgeClass(existingRating.rating)}>{formatRatingLabel(existingRating.rating)}</Badge>
+                            ) : (
+                              <span className="text-xs text-gray-400 italic font-medium">Not rated</span>
+                            )}
+
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setSelectedStudentRating(student);
+                                setStudentRating(hasNumericRating(existingRating?.rating) ? String(existingRating.rating) : '5');
+                                setShowStudentRatingDialog(true);
+                              }}
+                              className="h-8 rounded-lg border-slate-200 text-gray-700 px-2.5"
+                            >
+                              <Star className="w-3.5 h-3.5 mr-1 text-amber-500 fill-amber-500" />
+                              {existingRating?.rating ? 'Re-rate' : 'Rate'}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {projectStudents.length === 0 && (
+                      <p className="text-sm text-gray-400 italic">No students found for this project.</p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -429,7 +678,7 @@ export function ProjectView() {
             {/* Vertical timeline stepper line */}
             <div className="relative border-l-2 border-slate-200 ml-6 pl-8 space-y-8 py-2">
               {progressEntries.map((entry) => {
-                const isCompleted = entry.rating !== '';
+                const isCompleted = hasNumericRating(entry.rating);
                 return (
                   <div key={entry.id} className="relative">
                     {/* Stepper Dot circle icon */}
@@ -452,14 +701,8 @@ export function ProjectView() {
 
                           <div className="flex items-center gap-2 self-start sm:self-auto">
                             {entry.rating ? (
-                              <Badge className={
-                                entry.rating === 'Excellent' 
-                                  ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-50 border border-emerald-100 font-bold rounded-lg text-xs' 
-                                  : entry.rating === 'Good' 
-                                  ? 'bg-blue-50 text-blue-700 hover:bg-blue-50 border border-blue-100 font-bold rounded-lg text-xs' 
-                                  : 'bg-red-50 text-red-700 hover:bg-red-50 border border-red-100 font-bold rounded-lg text-xs'
-                              }>
-                                {entry.rating} Rating
+                              <Badge className={`${ratingBadgeClass(entry.rating)} rounded-lg text-xs`}>
+                                {formatRatingLabel(entry.rating)}
                               </Badge>
                             ) : (
                               <Badge className="bg-slate-50 text-gray-400 border border-slate-100 hover:bg-slate-50 font-semibold rounded-lg text-xs">
@@ -472,8 +715,13 @@ export function ProjectView() {
                                 open={showRatingDialog && selectedProgressId === entry.id}
                                 onOpenChange={(open) => {
                                   setShowRatingDialog(open);
-                                  if (open) setSelectedProgressId(entry.id);
-                                  else setSelectedProgressId(null);
+                                  if (open) {
+                                    setSelectedProgressId(entry.id);
+                                    setMilestoneComment(entry.feedback ?? '');
+                                  } else {
+                                    setSelectedProgressId(null);
+                                    setMilestoneComment('');
+                                  }
                                 }}
                               >
                                 <DialogTrigger asChild>
@@ -484,15 +732,29 @@ export function ProjectView() {
                                 </DialogTrigger>
                                 <DialogContent className="border-slate-100 rounded-2xl max-w-sm">
                                   <DialogHeader>
-                                    <DialogTitle className="text-lg font-bold text-gray-950">Grade Milestone</DialogTitle>
+                                    <DialogTitle className="text-lg font-bold text-gray-950">Comment on Progress</DialogTitle>
                                     <DialogDescription className="text-gray-500">
-                                      Rate the milestone activity quality for: <strong className="text-gray-800">{entry.title}</strong>
+                                      Leave lecturer feedback for: <strong className="text-gray-800">{entry.title}</strong>
                                     </DialogDescription>
                                   </DialogHeader>
-                                  <div className="space-y-3 pt-4">
-                                    <Button onClick={() => handleRateProgress(entry.id, 'Excellent')} className="w-full h-11 bg-emerald-55 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold rounded-xl" variant="ghost">Excellent</Button>
-                                    <Button onClick={() => handleRateProgress(entry.id, 'Good')} className="w-full h-11 bg-blue-55 hover:bg-blue-100 text-blue-800 border border-blue-200 font-bold rounded-xl" variant="ghost">Good</Button>
-                                    <Button onClick={() => handleRateProgress(entry.id, 'Bad')} className="w-full h-11 bg-red-55 hover:bg-red-100 text-red-800 border border-red-200 font-bold rounded-xl" variant="ghost">Bad</Button>
+                                  <div className="space-y-4 pt-4">
+                                    <div className="space-y-2">
+                                      <Label className="text-sm font-semibold text-gray-700">Comment</Label>
+                                      <Textarea
+                                        value={milestoneComment}
+                                        onChange={(e) => setMilestoneComment(e.target.value)}
+                                        placeholder="Write feedback on the student's progress, strengths, or what should improve next..."
+                                        rows={4}
+                                        className="border-slate-200 focus-visible:ring-[#1E3A8A] rounded-xl text-gray-950 resize-none"
+                                      />
+                                    </div>
+                                    <Button
+                                      onClick={() => handleRateProgress(entry.id)}
+                                      disabled={saving}
+                                      className="w-full h-11 bg-[#1E3A8A] hover:bg-[#152a63] text-white font-semibold rounded-xl"
+                                    >
+                                      {saving ? 'Saving...' : 'Submit Comment'}
+                                    </Button>
                                   </div>
                                 </DialogContent>
                               </Dialog>
@@ -531,6 +793,74 @@ export function ProjectView() {
 
           </CardContent>
         </Card>
+
+        <Dialog
+          open={showStudentRatingDialog}
+          onOpenChange={(open) => {
+            setShowStudentRatingDialog(open);
+            if (!open) {
+              setSelectedStudentRating(null);
+              setStudentRating('5');
+            }
+          }}
+        >
+          <DialogContent className="border-slate-100 rounded-2xl max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold text-gray-950">Rate Student</DialogTitle>
+              <DialogDescription className="text-gray-500">
+                Give a score from 1 to 10 for <strong className="text-gray-700">{selectedStudentRating?.name ?? selectedStudentRating?.indexNumber ?? selectedStudentRating?.email ?? 'this student'}</strong>
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-gray-700">Score (1-10)</Label>
+                <Select value={studentRating} onValueChange={setStudentRating}>
+                  <SelectTrigger className="h-11 border-slate-200 focus:ring-[#1E3A8A] rounded-xl text-gray-950">
+                    <SelectValue placeholder="Select score" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {RATING_OPTIONS.map((score) => (
+                      <SelectItem key={score} value={String(score)}>{score}/10</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button onClick={handleRateStudent} disabled={saving} className="w-full h-11 bg-[#1E3A8A] hover:bg-[#152a63] text-white font-semibold rounded-xl">
+                {saving ? 'Saving...' : 'Submit Rating'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Close Project Confirmation Dialog */}
+        <Dialog open={showCloseDialog} onOpenChange={(o) => { if (!o) setShowCloseDialog(false); }}>
+          <DialogContent className="border-slate-100 rounded-2xl max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold text-gray-950">Close Project?</DialogTitle>
+              <DialogDescription className="text-gray-500">
+                This will mark <strong className="text-gray-800">{project.title}</strong> as{' '}
+                <strong className="text-rose-600">Completed</strong> and set progress to 100%. This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex gap-3 pt-4">
+              <Button
+                variant="outline"
+                className="flex-1 border-slate-200 text-gray-700 rounded-xl h-11"
+                onClick={() => setShowCloseDialog(false)}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCloseProject}
+                disabled={saving}
+                className="flex-1 h-11 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-xl"
+              >
+                {saving ? 'Closing...' : 'Yes, Close Project'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Document Submissions Card Deck */}
         <Card className="border-slate-100 shadow-xl shadow-slate-100/50 rounded-2xl">
@@ -619,23 +949,27 @@ export function ProjectView() {
                   </div>
 
                   <div className="px-5 pb-5 pt-3 border-t border-slate-50 flex gap-2">
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => alert(`Viewing document: ${doc.name}`)}
-                      className="flex-1 h-9 rounded-xl border-slate-200 text-gray-700 font-semibold"
-                    >
-                      <EyeIcon className="w-3.5 h-3.5 mr-1" /> View File
-                    </Button>
-                    
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => alert(`Downloading: ${doc.name}`)}
-                      className="flex-1 h-9 rounded-xl border-slate-200 text-gray-700 font-semibold"
-                    >
-                      <Download className="w-3.5 h-3.5 mr-1" /> Download
-                    </Button>
+                    <a href={doc.url || '#'} target="_blank" rel="noopener noreferrer" className="flex-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!doc.url}
+                        className="w-full h-9 rounded-xl border-slate-200 text-gray-700 font-semibold"
+                      >
+                        <EyeIcon className="w-3.5 h-3.5 mr-1" /> View File
+                      </Button>
+                    </a>
+
+                    <a href={doc.url || '#'} target="_blank" rel="noopener noreferrer" download className="flex-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!doc.url}
+                        className="w-full h-9 rounded-xl border-slate-200 text-gray-700 font-semibold"
+                      >
+                        <Download className="w-3.5 h-3.5 mr-1" /> Download
+                      </Button>
+                    </a>
                   </div>
                 </Card>
               ))}

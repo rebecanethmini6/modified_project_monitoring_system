@@ -31,7 +31,7 @@ export async function GET(request: Request) {
       let query = supabase.from(tableName).select('*');
 
       if (userId) {
-        query = query.eq('user_id', userId);
+        query = query.eq('id', userId);
       } else if (email) {
         query = query.eq('email', email);
       }

@@ -5,7 +5,9 @@ export async function GET() {
   try {
     const supabase = createAdminSupabaseClient();
     
-    // Fetch all registered lecturers from the 'lecturers' table
+    // Fetch all registered faculty. Any lecturer can be picked as the
+    // supervisor/coordinator for a project — the role is the project-level
+    // assignment (projects.supervisor_id / projects.coordinator_id).
     const { data: lecturers, error } = await supabase
       .from('lecturers')
       .select('id, lecturer_id, full_name, email, department')

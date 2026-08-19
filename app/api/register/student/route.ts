@@ -2,22 +2,9 @@ import { ensureRequiredFields, errorResponse, jsonResponse, readJsonBody } from 
 import { createAdminSupabaseClient } from '@/backend/supabase';
 import type { StudentRegistrationPayload } from '@/backend/contracts';
 
-const combinationLabels: Record<string, string> = {
-  cs: 'Computer Science',
-  'cs-math': 'Computer Science & Mathematics',
-  is: 'Information Systems',
-  se: 'Software Engineering',
-  ds: 'Data Science',
-};
-
-const academicYearLabels: Record<string, string> = {
-  '1': 'Year 1',
-  '2': 'Year 2',
-  '3': 'Year 3',
-  '4': 'Year 4',
-};
-
 const studentTableName = 'students';
+const MIN_REGISTRATION_YEAR = 2023;
+const MAX_REGISTRATION_YEAR = 2026;
 
 async function saveStudentProfile(
   supabase: ReturnType<typeof createAdminSupabaseClient>,
@@ -39,11 +26,16 @@ export async function POST(request: Request) {
       'fullName',
       'indexNumber',
       'email',
-      'combination',
-      'academicYear',
+      'registrationDate',
       'contactNumber',
       'password',
     ]);
+
+    const dateMatch = /^(\d{4})-\d{2}-\d{2}$/.exec(body.registrationDate);
+    const registrationYear = dateMatch ? Number(dateMatch[1]) : Number.NaN;
+    if (!Number.isInteger(registrationYear) || registrationYear < MIN_REGISTRATION_YEAR || registrationYear > MAX_REGISTRATION_YEAR) {
+      return errorResponse(`Registration year must be between ${MIN_REGISTRATION_YEAR} and ${MAX_REGISTRATION_YEAR}.`, 400);
+    }
 
     const supabase = createAdminSupabaseClient();
     const { data, error } = await supabase.auth.admin.createUser({
@@ -54,10 +46,7 @@ export async function POST(request: Request) {
         role: 'student',
         full_name: body.fullName,
         index_number: body.indexNumber,
-        combination: body.combination,
-        combination_label: combinationLabels[body.combination] ?? body.combination,
-        academic_year: body.academicYear,
-        academic_year_label: academicYearLabels[body.academicYear] ?? body.academicYear,
+        registration_date: body.registrationDate,
         contact_number: body.contactNumber,
       },
     });
@@ -72,8 +61,7 @@ export async function POST(request: Request) {
         email: body.email,
         full_name: body.fullName,
         index_number: body.indexNumber,
-        combination: combinationLabels[body.combination] ?? body.combination,
-        academic_year: academicYearLabels[body.academicYear] ?? body.academicYear,
+        registration_date: body.registrationDate,
         contact_number: body.contactNumber,
       });
     } catch (profileError) {

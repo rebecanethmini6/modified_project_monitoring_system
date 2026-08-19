@@ -2,242 +2,92 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Eye, EyeOff, GraduationCap } from 'lucide-react';
 import supabaseClient from '../lib/supabaseClient';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { GraduationCap, Sparkles, User, Lock, ArrowRight, BookOpen } from 'lucide-react';
 
 export function Login() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const redirectByRole = (role?: string | null) => {
-    if (role === 'student') {
-      router.push('/student/dashboard');
-      return;
-    }
-
-    if (role === 'lecturer') {
-      router.push('/lecturer/dashboard');
-      return;
-    }
-
-    if (email.includes('student')) {
-      router.push('/student/dashboard');
-      return;
-    }
-
-    if (email.includes('lecturer')) {
-      router.push('/lecturer/dashboard');
-      return;
-    }
-
+    if (role === 'admin' || email.trim().toLowerCase() === 'admin@gmail.com') return router.push('/admin/dashboard');
+    if (role === 'student' || email.includes('student')) return router.push('/student/dashboard');
+    if (role === 'lecturer' || email.includes('lecturer')) return router.push('/lecturer/dashboard');
     router.push('/');
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
     setError(null);
     setLoading(true);
     try {
-      const attemptLogin = () => supabaseClient.auth.signInWithPassword({
-        email,
-        password,
-      });
+      if (email.trim().toLowerCase() === 'admin@gmail.com') {
+        const response = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload?.error ?? 'Admin login failed.');
+        router.push('/admin/dashboard');
+        return;
+      }
 
-      const { data, error: signInError } = await attemptLogin();
-
+      const signIn = () => supabaseClient.auth.signInWithPassword({ email, password });
+      const { data, error: signInError } = await signIn();
       if (signInError) {
         if (signInError.message.toLowerCase().includes('email not confirmed')) {
-          const confirmResponse = await fetch('/api/auth/confirm-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email }),
-          });
-
-          if (confirmResponse.ok) {
-            const retry = await attemptLogin();
+          const confirmation = await fetch('/api/auth/confirm-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+          if (confirmation.ok) {
+            const retry = await signIn();
             if (!retry.error) {
-              redirectByRole(retry.data.user?.user_metadata?.role ?? null);
+              redirectByRole((retry.data.user?.user_metadata?.role as string | undefined) ?? (retry.data.user?.app_metadata?.role as string | undefined) ?? null);
               return;
             }
           }
         }
-
-        setError(signInError.message);
-        setLoading(false);
-        return;
+        throw new Error(signInError.message);
       }
-
-      redirectByRole(data.user?.user_metadata?.role ?? null);
-    } catch (err: any) {
-      setError(err?.message ?? 'Login failed');
+      redirectByRole((data.user?.user_metadata?.role as string | undefined) ?? (data.user?.app_metadata?.role as string | undefined) ?? null);
+    } catch (loginError: unknown) {
+      setError(loginError instanceof Error ? loginError.message : 'Login failed.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-[#F8FAFC]">
-      {/* Left side: Premium Academic Panel */}
-      <div className="hidden md:flex md:w-[45%] lg:w-[50%] bg-gradient-to-br from-[#1E3A8A] via-[#1E3A8A] to-[#4F46E5] text-white flex-col justify-between p-12 relative overflow-hidden">
-        {/* Subtle grid pattern overlay */}
-        <div className="absolute inset-0 opacity-10 bg-[linear-gradient(to_right,#808080_1px,transparent_1px),linear-gradient(to_bottom,#808080_1px,transparent_1px)] bg-[size:24px_24px]"></div>
-        
-        {/* Top Header */}
-        <div className="flex items-center gap-3 relative z-10">
-          <div className="bg-white/10 backdrop-blur-md p-2 rounded-xl border border-white/20">
-            <GraduationCap className="w-8 h-8 text-white" />
+    <main className="relative flex min-h-screen flex-col overflow-hidden bg-[#eef2ff] text-[#052978]">
+      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/login.jpg')" }} />
+      <div className="absolute inset-0 bg-[#062b74]/25" />
+
+      <header className="relative z-10 flex h-14 items-center border-b border-white/40 bg-white/90 px-6 shadow-sm backdrop-blur-sm">
+        <div className="flex items-center gap-2 text-lg font-bold"><GraduationCap className="h-5 w-5 fill-[#052978]" />Wayamba University Of Sri Lanka</div>
+      </header>
+
+      <section className="relative z-10 flex flex-1 items-center justify-center px-5 py-12">
+        <div className="w-full max-w-[340px] rounded-lg border border-slate-200/80 bg-white/95 p-5 shadow-2xl shadow-blue-950/25 backdrop-blur-sm sm:p-6">
+          <div className="text-center">
+            <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#edf2fc]"><GraduationCap className="h-5 w-5 fill-[#052978] text-[#052978]" /></span>
+            <h1 className="mt-4 text-2xl font-extrabold text-[#09347f]">Sign In to PMS</h1>
+            <p className="mt-1 text-sm text-slate-500">Access your academic project dashboard</p>
           </div>
-          <div>
-            <h2 className="font-bold text-lg tracking-wider text-white">UNIVERSITY PORTAL</h2>
-            <p className="text-xs text-blue-200">Excellence in Research & Engineering</p>
-          </div>
+
+          <form onSubmit={handleLogin} className="mt-5 space-y-3">
+            <div className="space-y-1.5"><Label htmlFor="email" className="text-sm font-semibold text-slate-700">Email</Label><Input id="email" type="email" placeholder="e.g. student@university.edu" value={email} onChange={(event) => setEmail(event.target.value)} className="h-10 border-slate-200 bg-[#fbfbff] text-sm text-slate-900" required /></div>
+            <div className="space-y-1.5"><Label htmlFor="password" className="text-sm font-semibold text-slate-700">Password</Label><div className="relative"><Input id="password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={password} onChange={(event) => setPassword(event.target.value)} className="h-10 border-slate-200 bg-[#fbfbff] pr-10 text-sm text-slate-900" required /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}</button></div></div>
+            {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+            <Button type="submit" disabled={loading} className="mt-2 h-11 w-full bg-[#052978] text-sm font-bold shadow-md shadow-blue-900/20 hover:bg-[#031f5a]">{loading ? 'Signing in...' : 'Login'}</Button>
+          </form>
+
+          <div className="mt-5 border-t border-slate-100 pt-4 text-center"><p className="text-sm text-slate-500">New to the portal?</p><div className="mt-3 flex justify-center gap-3"><button onClick={() => router.push('/register/student')} className="text-sm font-bold text-[#09347f] hover:underline">Student sign up</button><span className="text-slate-300">|</span><button onClick={() => router.push('/register/lecturer')} className="text-sm font-bold text-[#09347f] hover:underline">Lecturer sign up</button></div></div>
         </div>
+      </section>
 
-        {/* Center content */}
-        <div className="space-y-6 relative z-10 max-w-lg">
-          <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-semibold text-emerald-300 border border-white/10">
-            <Sparkles className="w-4 h-4" />
-            <span>Introducing Milestone Tracking</span>
-          </div>
-          <h1 className="text-4xl lg:text-5xl font-extrabold tracking-tight leading-tight">
-            Academic Project <br />
-            <span className="text-emerald-400">Monitoring System</span>
-          </h1>
-          <p className="text-blue-100 leading-relaxed text-sm lg:text-base">
-            Track and monitor final year research projects, collaborate with supervisors, submit milestones, and manage evaluations seamlessly.
-          </p>
-        </div>
-
-        {/* Footer/Help Card */}
-        <div className="bg-white/10 backdrop-blur-md border border-white/20 p-5 rounded-2xl relative z-10 space-y-3">
-          <div className="flex items-center gap-2 text-xs font-bold text-blue-200 uppercase tracking-widest">
-            <BookOpen className="w-4 h-4 text-emerald-400" />
-            <span>Dashboard Credentials</span>
-          </div>
-          <div className="grid grid-cols-2 gap-4 text-xs lg:text-sm">
-            <div>
-              <span className="block text-blue-300 font-medium">Student account</span>
-              <code className="text-white block mt-1 font-mono bg-black/20 p-1.5 rounded text-[11px] select-all">student@university.edu</code>
-            </div>
-            <div>
-              <span className="block text-blue-300 font-medium">Lecturer account</span>
-              <code className="text-white block mt-1 font-mono bg-black/20 p-1.5 rounded text-[11px] select-all">lecturer@university.edu</code>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Right side: Login Card Container */}
-      <div className="flex-1 flex items-center justify-center p-6 lg:p-12">
-        <div className="w-full max-w-md space-y-8">
-          {/* Mobile logo view */}
-          <div className="flex flex-col items-center text-center md:hidden mb-6">
-            <div className="bg-[#1E3A8A] p-3 rounded-2xl shadow-lg shadow-blue-900/10 mb-3">
-              <GraduationCap className="w-8 h-8 text-white" />
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900">Project Monitoring System</h1>
-            <p className="text-sm text-gray-500">University Portal Login</p>
-          </div>
-
-          <Card className="border-slate-100 shadow-xl shadow-slate-100/50 rounded-2xl">
-            <CardHeader className="space-y-1 pb-6">
-              <CardTitle className="text-2xl font-bold tracking-tight text-gray-900 text-center md:text-left">
-                Sign In
-              </CardTitle>
-              <CardDescription className="text-center md:text-left text-gray-500">
-                Enter your university credentials to access your workspace
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleLogin} className="space-y-5">
-                <div className="space-y-2">
-                  <Label htmlFor="email" className="text-sm font-semibold text-gray-700">Email Address</Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="your.name@university.edu"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="pl-10 h-11 border-slate-200 focus-visible:ring-[#1E3A8A] rounded-xl text-gray-950"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <Label htmlFor="password" className="text-sm font-semibold text-gray-700">Password</Label>
-                  </div>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <Input
-                      id="password"
-                      type="password"
-                      placeholder="Enter account password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="pl-10 h-11 border-slate-200 focus-visible:ring-[#1E3A8A] rounded-xl text-gray-950"
-                      required
-                    />
-                  </div>
-                </div>
-
-                {error && (
-                  <div className="bg-red-55 border border-red-100 text-red-700 text-xs p-3.5 rounded-xl flex items-center gap-2">
-                    <span className="font-medium">{error}</span>
-                  </div>
-                )}
-
-                <Button type="submit" className="w-full h-11 bg-[#1E3A8A] hover:bg-[#152a63] text-white font-semibold rounded-xl transition-all duration-200 shadow-md shadow-blue-900/10" disabled={loading}>
-                  {loading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Signing in...
-                    </span>
-                  ) : (
-                    <span className="flex items-center justify-center gap-1.5">
-                      Log In <ArrowRight className="w-4 h-4" />
-                    </span>
-                  )}
-                </Button>
-              </form>
-
-              <div className="mt-8 pt-6 border-t border-slate-100 text-center space-y-4">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">New to the portal?</p>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <Button
-                    variant="outline"
-                    className="flex-1 h-10 border-slate-200 text-gray-700 font-medium hover:bg-slate-55 rounded-xl text-xs sm:text-sm"
-                    onClick={() => router.push('/register/student')}
-                  >
-                    Register as Student
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="flex-1 h-10 border-slate-200 text-gray-700 font-medium hover:bg-slate-55 rounded-xl text-xs sm:text-sm"
-                    onClick={() => router.push('/register/lecturer')}
-                  >
-                    Register as Lecturer
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </div>
+      <footer className="relative z-10 flex flex-wrap justify-between gap-2 border-t border-white/40 bg-white/90 px-6 py-4 text-xs text-[#325183] backdrop-blur-sm"><span>Wayamba University of Sri Lanka</span><span>© 2026 Wayamba University of Sri Lanka. All rights reserved.</span></footer>
+    </main>
   );
 }

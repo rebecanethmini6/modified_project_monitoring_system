@@ -4,10 +4,9 @@ import type { LecturerRegistrationPayload } from '@/backend/contracts';
 
 const departmentLabels: Record<string, string> = {
   cs: 'Computer Science',
-  it: 'Information Technology',
-  se: 'Software Engineering',
-  ds: 'Data Science',
-  math: 'Mathematics',
+  im: 'Industrial Management',
+  ms: 'Mathematics and Statistics',
+  ee: 'Electronics',
 };
 
 const lecturerTableNames = ['lecturers', 'lecturer'];

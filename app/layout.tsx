@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Outfit } from "next/font/google";
 import "./globals.css";
+import { StorageCleanup } from "@/components/StorageCleanup";
 
-const inter = Inter({
+const outfit = Outfit({
   variable: "--font-sans",
   subsets: ["latin"],
 });
@@ -20,9 +21,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} h-full antialiased`}
+      className={`${outfit.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col"><StorageCleanup />{children}</body>
     </html>
   );
 }
